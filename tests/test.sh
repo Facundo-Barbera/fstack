@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# fstack tests: plugin validates, hook emits fast valid JSON, scripts never write into the
+# work repo, scripts stay bash 3.2 safe for macOS. No server, temp dirs outside the repo.
+set -uo pipefail
+root=$(cd "$(dirname "$0")/.." && pwd)
+plugin=$root/plugins/fstack
+hook=$plugin/hooks/session-start.sh
+check=$plugin/skills/review/scripts/check.sh
+lock=$plugin/skills/verify/scripts/devserver-lock.sh
+scripts=("$hook" "$check" "$lock")
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/fstack-test.XXXXXX")
+trap 'rm -rf "$tmp"' EXIT
+pass=0 fail=0
+ok() { pass=$((pass + 1)); echo "ok    $1"; }
+ko() { fail=$((fail + 1)); echo "FAIL  $1"; [ -n "${2:-}" ] && printf '%s\n' "$2" | sed 's/^/      /'; }
+skip() { echo "skip  $1 (NOT VERIFIED)"; }
+
+json_ok() {
+  if command -v jq >/dev/null; then jq -e '.hookSpecificOutput.hookEventName == "SessionStart" and (.hookSpecificOutput.additionalContext | length > 0)' >/dev/null
+  else python3 -c 'import json,sys; d=json.load(sys.stdin)["hookSpecificOutput"]; assert d["hookEventName"]=="SessionStart" and d["additionalContext"]'
+  fi
+}
+
+# 1. Manifests and skills validate.
+if command -v claude >/dev/null; then
+  for p in "$root" "$plugin"; do
+    if out=$(claude plugin validate --strict "$p" 2>&1); then ok "validate ${p#"$root"/}"; else ko "validate ${p#"$root"/}" "$out"; fi
+  done
+else
+  skip "claude plugin validate: claude CLI not installed"
+fi
+
+# 2. Hook: valid JSON with and without machine config, quotes escaped, under 200 ms.
+mkdir -p "$tmp/home/.config/fstack"
+if HOME=$tmp/home XDG_CONFIG_HOME='' "$hook" | json_ok; then ok "hook JSON without config"; else ko "hook JSON without config"; fi
+printf 'role=orchestrator\nmachine=box "one"\\\n' >"$tmp/home/.config/fstack/config"
+out=$(HOME=$tmp/home XDG_CONFIG_HOME='' "$hook")
+if printf '%s' "$out" | json_ok && printf '%s' "$out" | grep -q 'role orchestrator'; then ok "hook JSON with config"; else ko "hook JSON with config" "$out"; fi
+TIMEFORMAT=%R
+worst=0
+for _ in 1 2 3 4 5; do
+  t=$({ time HOME=$tmp/home "$hook" >/dev/null; } 2>&1)
+  worst=$(awk -v a="$worst" -v b="$t" 'BEGIN { print (b > a ? b : a) }')
+done
+if awk -v t="$worst" 'BEGIN { exit !(t < 0.2) }'; then ok "hook under 200 ms (worst of 5: ${worst}s)"; else ko "hook took ${worst}s"; fi
+
+# 3. Nothing writes into the work repo; check.sh still finds what it should.
+repo=$tmp/repo
+git init -q -b main "$repo"
+cd "$repo" || exit 1
+git config user.email t@example.com && git config user.name t
+seq 1 390 >big.txt && git add big.txt && git commit -qm init
+git checkout -qb feature
+seq 1 450 >big.txt && printf 'notes\n' >PLAN.md && git add -A && git commit -qm change
+printf 'draft\n' >untracked.md
+snap() { (find . -path ./.git/index -prune -o -type f -print | LC_ALL=C sort | xargs cksum; git status --porcelain --ignored); }
+before=$(snap)
+export HOME=$tmp/home XDG_CACHE_HOME=$tmp/cache
+"$hook" >/dev/null
+diffout=$("$check" main)
+"$check" --all >/dev/null
+"$lock" status >/dev/null
+FSTACK_ROLE=worker "$lock" start -- true >/dev/null 2>&1
+lock_rc=$?
+if [ "$(snap)" = "$before" ]; then ok "no script writes into the work repo"; else ko "repo changed" "$(diff <(echo "$before") <(snap))"; fi
+case $diffout in *"big.txt: 450"*"PLAN.md: loose"*"untracked.md: loose"*) ok "check.sh reports big file and loose markdown" ;; *) ko "check.sh findings" "$diffout" ;; esac
+if [ "$lock_rc" = 3 ]; then ok "devserver lock refuses workers"; else ko "devserver lock let a worker start (rc $lock_rc)"; fi
+cd "$root" || exit 1
+
+# 4. Bash 3.2 (macOS): syntax, and none of the GNU or bash 4+ only constructs.
+for s in "${scripts[@]}" "$root/tests/test.sh"; do
+  bash -n "$s" || ko "syntax ${s#"$root"/}"
+done
+bad=$(grep -nE -- '-printf|mapfile|readarray|flock|setsid|declare -A|local -n|\$\{[A-Za-z_]+(,,|\^\^)\}|sed -i|readlink -f|EPOCHREALTIME|%N' "${scripts[@]}" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#')
+if [ -z "$bad" ]; then ok "scripts avoid GNU-only and bash 4+ constructs"; else ko "non-portable constructs" "$bad"; fi
+if command -v shellcheck >/dev/null; then
+  if out=$(shellcheck "${scripts[@]}" "$root/tests/test.sh" 2>&1); then ok "shellcheck"; else ko "shellcheck" "$out"; fi
+else
+  skip "shellcheck not installed"
+fi
+
+echo "$pass passed, $fail failed"
+[ "$fail" = 0 ]
