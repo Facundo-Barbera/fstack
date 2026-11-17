@@ -1,0 +1,5 @@
+# Machine-local fleet config never leaves the machine.
+fstack.local.toml
+fleet.toml
+# Scratch space for tests and generated digests.
+.tmp/

@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# fstack CLI. Bash with no dependencies beyond git and coreutils, because it must run
+# on every machine an agent touches before anything else is installed.
+set -o pipefail
+
+FSTACK_SELF=$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)
+FSTACK_HOME=${FSTACK_HOME:-$HOME/.fstack}
+FSTACK_REPO=${FSTACK_REPO:-https://github.com/Facundo-Barbera/fstack.git}
+FSTACK_BIN_DIR=${FSTACK_BIN_DIR:-$HOME/.local/bin}
+
+# shellcheck source=../lib/common.sh
+. "$FSTACK_SELF/lib/common.sh"
+# shellcheck source=../lib/sync.sh
+. "$FSTACK_SELF/lib/sync.sh"
+# shellcheck source=../lib/doctor.sh
+. "$FSTACK_SELF/lib/doctor.sh"
+
+usage() {
+  cat <<'EOF'
+usage: fstack <command>
+  install [--ref vX.Y.Z]   clone or update ~/.fstack at a tag and link fstack into ~/.local/bin
+  sync [--adapters-only]   apply the version pinned in fstack.lock to this repo
+  update --to vX.Y.Z       bump the pin on a new branch and commit it, ready for a PR
+  doctor [--harness NAME]  check this repo's fstack setup (read-only)
+  version                  print the installed version
+EOF
+}
+
+# User-level only: no sudo, nothing outside $FSTACK_HOME and $FSTACK_BIN_DIR.
+cmd_install() {
+  local ref=""
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --ref) ref=${2:-}; shift 2 ;;
+      --ref=*) ref=${1#--ref=}; shift ;;
+      *) die "unknown option $1" ;;
+    esac
+  done
+  if [ -d "$FSTACK_HOME/.git" ]; then
+    git -C "$FSTACK_HOME" fetch --quiet --tags origin || die "fetch failed in $FSTACK_HOME"
+  else
+    git clone --quiet "$FSTACK_REPO" "$FSTACK_HOME" || die "clone of $FSTACK_REPO failed"
+  fi
+  if [ -z "$ref" ]; then
+    ref=$(git -C "$FSTACK_HOME" tag -l 'v*' --sort=-v:refname | head -n1)
+  fi
+  if [ -z "$ref" ]; then
+    ref=$(git -C "$FSTACK_HOME" symbolic-ref -q --short refs/remotes/origin/HEAD || echo origin/main)
+    info "no release tags yet; using $ref (unpinned)"
+  fi
+  git -C "$FSTACK_HOME" -c advice.detachedHead=false checkout --quiet --detach "$ref" || die "unknown ref $ref"
+  mkdir -p "$FSTACK_BIN_DIR"
+  ln -sfn "$FSTACK_HOME/bin/fstack" "$FSTACK_BIN_DIR/fstack"
+  case ":$PATH:" in
+    *":$FSTACK_BIN_DIR:"*) ;;
+    *) info "add $FSTACK_BIN_DIR to PATH to use fstack" ;;
+  esac
+  info "installed fstack $(tr -d '[:space:]' <"$FSTACK_HOME/VERSION") at $ref"
+}
+
+cmd=${1:-}
+shift || true
+case $cmd in
+  install) cmd_install "$@" ;;
+  sync) cmd_sync "$@" ;;
+  update) cmd_update "$@" ;;
+  doctor) cmd_doctor "$@" ;;
+  version | --version) self_version ;;
+  -h | --help | help | "") usage ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
