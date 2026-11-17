@@ -8,11 +8,27 @@ set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 repo=$(basename "$root")
 lock_dir=${FSTACK_LOCK_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/fstack/locks}
+# The lock is a directory: mkdir is atomic everywhere, unlike flock (absent on macOS).
 lock="$lock_dir/$repo.lock"
-pidfile="$lock_dir/$repo.pid"
+pidfile="$lock/pid"
 mkdir -p "$lock_dir"
 
 alive() { [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; }
+
+# Takes the lock, clearing it first if its server died. A lock without a pid is
+# still being taken by another start, so it counts as held.
+acquire() {
+  local waited=0
+  until mkdir "$lock" 2>/dev/null; do
+    if [ -f "$pidfile" ] && ! alive; then
+      rm -rf "$lock"
+      continue
+    fi
+    [ "$waited" -lt "${FSTACK_LOCK_WAIT:-0}" ] || return 1
+    sleep 1
+    waited=$((waited + 1))
+  done
+}
 
 case ${1:-} in
   start)
@@ -28,22 +44,22 @@ case ${1:-} in
       echo "devserver-lock: reusing running server pid $(cat "$pidfile") on port $FSTACK_DEV_PORT"
       exit 0
     fi
-    exec 9>"$lock"
-    if ! flock -w "${FSTACK_LOCK_WAIT:-0}" 9; then
+    if ! acquire; then
       echo "devserver-lock: another process holds $lock; not starting a second server" >&2
       exit 4
     fi
-    # The server inherits fd 9, so the lock is held exactly as long as the server lives.
-    PORT=$FSTACK_DEV_PORT setsid "$@" >"$lock_dir/$repo.log" 2>&1 &
+    # Job control gives the server its own process group (pgid = pid), so stop can
+    # kill the whole group. setsid would do the same but is not on macOS.
+    set -m
+    PORT=$FSTACK_DEV_PORT "$@" </dev/null >"$lock_dir/$repo.log" 2>&1 &
     echo $! >"$pidfile"
     echo "devserver-lock: started pid $! on port $FSTACK_DEV_PORT (log: $lock_dir/$repo.log)"
     ;;
   stop)
     if alive; then
-      # The server runs in its own session, so kill the whole group, not only the leader.
       kill -- "-$(cat "$pidfile")" 2>/dev/null || kill "$(cat "$pidfile")" 2>/dev/null || true
     fi
-    rm -f "$pidfile" "$lock"
+    rm -rf "$lock"
     echo "devserver-lock: stopped"
     ;;
   status)

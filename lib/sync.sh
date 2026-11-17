@@ -5,8 +5,10 @@
 sync_skills() {
   local root=$1 tree=$2 dest=$1/.agents/skills manifest=$1/.fstack/managed-skills name old
   mkdir -p "$dest" "$root/.fstack"
-  local new_list
-  new_list=$(find "$tree/.agents/skills" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort)
+  local new_list d
+  # A glob, not find -printf: BSD find (macOS) has no -printf.
+  new_list=$(for d in "$tree"/.agents/skills/*/; do [ -d "$d" ] && basename "$d"; done | sort)
+  [ -n "$new_list" ] || die "no skills found in $tree/.agents/skills"
   # A skill dropped upstream is deleted here too, so v1 never lingers next to v2.
   if [ -f "$manifest" ]; then
     while IFS= read -r old; do

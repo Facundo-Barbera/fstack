@@ -26,7 +26,7 @@ commit() { git -C "$1" add -A && git -C "$1" commit -q -m "$2" -m "Verified: non
 # Snapshot the working tree as a source repo with tags v0.1.0 and v0.2.0.
 SRC=$WORK/src
 mkdir -p "$SRC"
-(cd "$ROOT" && git ls-files -co --exclude-standard -z | xargs -0 -I{} cp -P --parents {} "$SRC/")
+(cd "$ROOT" && git ls-files -co --exclude-standard -z | tar --null -T - -cf - | tar -xf - -C "$SRC")
 git -C "$SRC" init -q && commit "$SRC" "v0.1.0 snapshot" && git -C "$SRC" tag v0.1.0
 printf '0.2.0\n' >"$SRC/VERSION"
 git -C "$SRC" rm -rq .agents/skills/delegate
@@ -95,7 +95,7 @@ echo "# gates: pre-commit"
 seq 1 500 >big.txt && git add big.txt
 refute "new 500-line file fails max-lines" env FSTACK_GATE_MAX_LINES=enforce "$G" pre-commit
 git commit -q -m "debt" -m "Verified: none"
-sed -i '1,10d' big.txt && git add big.txt
+tail -n +11 big.txt >big.tmp && mv big.tmp big.txt && git add big.txt
 check "shrinking an oversized file passes" env FSTACK_GATE_MAX_LINES=enforce "$G" pre-commit
 git commit -q -m "shrink" -m "Verified: none"
 seq 1 5 >>big.txt && git add big.txt
@@ -143,6 +143,16 @@ rm dirty.txt
 
 echo "# verify lock"
 refute "workers cannot start a dev server" env FSTACK_ROLE=worker .agents/skills/verify/scripts/devserver-lock.sh start -- true
+# A sleep stands in for the server: no port is opened.
+LOCK=.agents/skills/verify/scripts/devserver-lock.sh
+export FSTACK_LOCK_DIR=$WORK/locks FSTACK_DEV_PORT=1
+check "orchestrator starts through the lock" env FSTACK_ROLE=orchestrator "$LOCK" start -- sleep 30
+LOCKPID=$(cat "$FSTACK_LOCK_DIR/target.lock/pid" 2>/dev/null)
+check "second start reuses the running server" bash -c "FSTACK_ROLE=orchestrator '$LOCK' start -- sleep 31 | grep -q 'reusing running server pid $LOCKPID'"
+check "lock still owned by the first server" test "$(cat "$FSTACK_LOCK_DIR/target.lock/pid" 2>/dev/null)" = "$LOCKPID"
+check "stop releases the lock" bash -c "'$LOCK' stop && test ! -e '$FSTACK_LOCK_DIR/target.lock'"
+check "stop kills the server" bash -c "sleep 0.2; ! kill -0 '$LOCKPID' 2>/dev/null"
+unset FSTACK_LOCK_DIR FSTACK_DEV_PORT
 
 echo "# update"
 check "update to v0.2.0 commits on a branch" "$FSTACK" update --to v0.2.0

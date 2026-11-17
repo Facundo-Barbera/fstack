@@ -80,9 +80,11 @@ diff_range() {
 }
 
 scope_diff() {
+  # No mapfile: macOS ships bash 3.2. diff_range prints at most two words without spaces.
   local args
-  mapfile -t args < <(diff_range)
-  git diff --no-color --no-ext-diff "${args[@]}" "$@"
+  args=$(diff_range | tr '\n' ' ')
+  # shellcheck disable=SC2086
+  git diff --no-color --no-ext-diff $args "$@"
 }
 
 # Content of a path on the "new" side of the diff.
