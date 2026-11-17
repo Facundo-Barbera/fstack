@@ -1,0 +1,12 @@
+{
+  "name": "fstack",
+  "owner": { "name": "Facundo Barbera" },
+  "description": "Facundo Barbera's Claude Code plugin.",
+  "plugins": [
+    {
+      "name": "fstack",
+      "source": "./plugins/fstack",
+      "description": "Facundo's working rules for coding agents: evidence before done, worker/orchestrator roles, clean repos, UI with the real design system, one-screen digests."
+    }
+  ]
+}
