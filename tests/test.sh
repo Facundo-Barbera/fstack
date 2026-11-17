@@ -3,6 +3,7 @@
 # work repo, scripts stay bash 3.2 safe for macOS. No server, temp dirs outside the repo.
 set -uo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
+real_home=$HOME
 plugin=$root/plugins/fstack
 hook=$plugin/hooks/session-start.sh
 check=$plugin/skills/review/scripts/check.sh
@@ -78,6 +79,35 @@ if command -v shellcheck >/dev/null; then
 else
   skip "shellcheck not installed"
 fi
+
+# 5. fstack-bots: frontmatter other bots accept (only name and description; Hermes wants
+# descriptions near 60 chars, 160 hard), short always-on rules, a preamble in sync with
+# fstack's, and nothing private in a public repo.
+bots=$root/plugins/fstack-bots
+for f in "$bots"/skills/*/SKILL.md; do
+  rel=${f#"$root"/}
+  fm=$(awk 'NR == 1 && $0 != "---" { exit } NR > 1 && $0 == "---" { exit } NR > 1' "$f")
+  keys=$(printf '%s\n' "$fm" | sed -n 's/^\([A-Za-z_-]*\):.*/\1/p' | LC_ALL=C sort | tr '\n' ' ')
+  name=$(printf '%s\n' "$fm" | sed -n 's/^name: *//p')
+  desc=$(printf '%s\n' "$fm" | sed -n 's/^description: *//p')
+  dir=$(basename "$(dirname "$f")")
+  if [ "$keys" = "description name " ] && [ "$(printf '%s\n' "$fm" | wc -l | tr -d ' ')" = 2 ]; then ok "$rel frontmatter is only name and description"; else ko "$rel frontmatter" "$fm"; fi
+  if [ "$name" = "$dir" ] && printf '%s' "$name" | grep -qE '^[a-z0-9]+(-[a-z0-9]+)*$' && [ ${#name} -le 64 ]; then ok "$rel name matches folder"; else ko "$rel name '$name'"; fi
+  if [ ${#desc} -gt 0 ] && [ ${#desc} -le 60 ]; then ok "$rel description ${#desc} chars"; else ko "$rel description ${#desc} chars (want 1-60)"; fi
+done
+n=$(grep -cv '^<!--' "$bots/always-on/rules.md")
+if [ "$n" -le 15 ]; then ok "always-on rules are $n lines"; else ko "always-on rules are $n lines (max 15)"; fi
+preamble() { awk '/^## Briefing another agent|^## Delegation brief/ { s = 1 } s && /^```$/ { exit } s && f; s && /^```text$/ { f = 1 }' "$1"; }
+a=$(preamble "$plugin/skills/fstack/SKILL.md") b=$(preamble "$bots/skills/fstack-bots/SKILL.md")
+if [ -n "$a" ] && [ "$a" = "$b" ]; then ok "fstack-bots preamble matches fstack's"; else ko "preamble drifted" "$(diff <(echo "$a") <(echo "$b"))"; fi
+p=plugins/fstack/skills/digest/assets/digest.html
+if grep -q "$p" "$bots/skills/fstack-bots/SKILL.md" && [ -f "$root/$p" ]; then ok "fstack-bots points at existing $p"; else ko "missing reference $p"; fi
+# Host names come from this machine and its local fstack config, so the test names none.
+uname -n 2>/dev/null | cut -d. -f1 >"$tmp/hosts"
+cfg=$real_home/.config/fstack/config
+[ -f "$cfg" ] && sed -nE 's/^(machine|orchestrator|worker)=(.+)/\2/p' "$cfg" >>"$tmp/hosts"
+bad=$(grep -rnE -- '/home/[a-z]|/Users/[A-Za-z]|[A-Z]:\\Users' "$bots"; grep -rniwF -f "$tmp/hosts" "$bots")
+if [ -z "$bad" ]; then ok "fstack-bots names no host or private path"; else ko "private names in fstack-bots" "$bad"; fi
 
 echo "$pass passed, $fail failed"
 [ "$fail" = 0 ]

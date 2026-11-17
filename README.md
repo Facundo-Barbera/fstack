@@ -12,4 +12,7 @@ claude plugin marketplace update fstack && claude plugin update fstack@fstack --
 claude plugin marketplace add https://github.com/Facundo-Barbera/fstack.git#v0.2.0   # pin to a tag
 ```
 
+For long-lived bots (Hermes Agent, OpenClaw, Grok Bot): `plugins/fstack-bots`, a portable
+`SKILL.md` plus always-on rules; install steps in `plugins/fstack-bots/install/`.
+
 Optional machine config: `~/.config/fstack/config` (`role=`, `machine=`). Tests: `tests/test.sh`. MIT.
