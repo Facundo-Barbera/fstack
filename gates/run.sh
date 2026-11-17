@@ -47,7 +47,7 @@ stop_check() {
   fi
   [ "$unstamped" -gt 0 ] && issues="$issues$unstamped commit(s) without a 'Verified:' trailer. "
   [ -n "$issues" ] || return 0
-  msg="fstack: $issues Commit your work with 'Verified: <skill> <evidence>' (or 'Verified: none') and report anything NOT VERIFIED."
+  msg="fstack: ${issues}Commit your work with 'Verified: <skill> <evidence>' (or 'Verified: none') and report anything NOT VERIFIED."
   local mode
   mode=$(gate_mode stamp)
   [ "$mode" = off ] && return 0
