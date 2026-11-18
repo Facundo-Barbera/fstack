@@ -8,7 +8,8 @@ plugin=$root/plugins/fstack
 hook=$plugin/hooks/session-start.sh
 check=$plugin/skills/review/scripts/check.sh
 lock=$plugin/skills/verify/scripts/devserver-lock.sh
-scripts=("$hook" "$check" "$lock")
+ui=$plugin/skills/ui/scripts/ui-check.sh
+scripts=("$hook" "$check" "$lock" "$ui")
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/fstack-test.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 pass=0 fail=0
@@ -36,7 +37,7 @@ mkdir -p "$tmp/home/.config/fstack"
 if HOME=$tmp/home XDG_CONFIG_HOME='' "$hook" | json_ok; then ok "hook JSON without config"; else ko "hook JSON without config"; fi
 printf 'role=orchestrator\nmachine=box "one"\\\n' >"$tmp/home/.config/fstack/config"
 out=$(HOME=$tmp/home XDG_CONFIG_HOME='' "$hook")
-if printf '%s' "$out" | json_ok && printf '%s' "$out" | grep -q 'role orchestrator'; then ok "hook JSON with config"; else ko "hook JSON with config" "$out"; fi
+if printf '%s' "$out" | json_ok && printf '%s' "$out" | grep -q 'role orchestrator' && printf '%s' "$out" | grep -q 'load fstack:ui.*UI evidence'; then ok "hook JSON with config"; else ko "hook JSON with config" "$out"; fi
 TIMEFORMAT=%R
 worst=0
 for _ in 1 2 3 4 5; do
@@ -68,7 +69,47 @@ case $diffout in *"big.txt: 450"*"PLAN.md: loose"*"untracked.md: loose"*) ok "ch
 if [ "$lock_rc" = 3 ]; then ok "devserver lock refuses workers"; else ko "devserver lock let a worker start (rc $lock_rc)"; fi
 cd "$root" || exit 1
 
-# 4. Bash 3.2 (macOS): syntax, and none of the GNU or bash 4+ only constructs.
+# 4. ui-check.sh on a fixture repo: flags new raw values, respects the repo's theme and the
+# classes the base branch already uses, sees untracked files and writes nothing.
+ui_repo=$tmp/ui
+git init -q -b main "$ui_repo"
+cd "$ui_repo" || exit 1
+git config user.email t@example.com && git config user.name t
+mkdir -p src/components
+printf '@import "tailwindcss";\n@theme {\n  --color-ember-400: hsl(24 100%% 58%%);\n}\n' >src/index.css
+printf 'module.exports = { theme: { extend: { colors: {\n  tide: { 500: "#0a7" },\n} } } };\n' >tailwind.config.js
+printf 'export const A = () => <div className="bg-white/60 p-4" />;\n' >src/components/A.tsx
+git add -A && git commit -qm base
+git checkout -qb feature
+{
+  echo '// A 2px rule and #fff in a comment are not code.'
+  echo 'export const B = () => <div className="bg-white/60 bg-ember-400/15 text-tide-500 hover:bg-[#ff0000] text-rose-500 bg-white/70" />;'
+} >>src/components/A.tsx
+printf '.x {\n  --color-local: #123456;\n  color: #abcdef;\n}\n' >>src/index.css
+git add -A && git commit -qm feature
+printf 'export const C = () => <p className="border-blue-500/50" />;\n' >src/components/C.tsx
+before=$(snap)
+out=$("$ui" diff main); rc=$?
+got=$(printf '%s\n' "$out" | sed -n 's/^src[^:]*: \([^ ]*\) .*/\1/p' | LC_ALL=C sort | tr '\n' ' ')
+want='#abcdef bg-[#ff0000] bg-white/70 border-blue-500/50 text-rose-500 '
+if [ "$rc" = 1 ] && [ "$got" = "$want" ]; then ok "ui-check diff flags only new raw values"; else ko "ui-check diff (rc $rc, got '$got')" "$out"; fi
+out=$("$ui" inventory); rc=$?
+case "$rc $out" in "0 "*"ember-400"*"tide"*"src/components"*) ok "ui-check inventory lists theme colours and components" ;; *) ko "ui-check inventory (rc $rc)" "$out" ;; esac
+if [ "$(snap)" = "$before" ]; then ok "ui-check writes nothing into the work repo"; else ko "ui-check changed the repo" "$(diff <(echo "$before") <(snap))"; fi
+rm src/components/C.tsx
+if out=$("$ui" diff HEAD); then ok "ui-check diff passes when nothing changed"; else ko "ui-check diff with no changes" "$out"; fi
+cd "$root" || exit 1
+if command -v python3 >/dev/null; then
+  out=$("$ui" cvd '#111111' '#d62728' '#2ca02c'); rc=$?
+  case "$rc $out" in "1 "*"#d62728~#2ca02c"*"under 20"*) ok "ui-check cvd flags red/green" ;; *) ko "ui-check cvd red/green (rc $rc)" "$out" ;; esac
+  out=$("$ui" cvd '#111' '#fff' '#ffcc00'); rc=$?
+  case "$rc $out" in "0 #fff vs bg #111: contrast 18."*) ok "ui-check cvd passes distinct, contrasting colours" ;; *) ko "ui-check cvd distinct (rc $rc)" "$out" ;; esac
+  if ! "$ui" cvd '#111' 'nothex' '#fff' >/dev/null 2>&1; then ok "ui-check cvd rejects a bad colour"; else ko "ui-check cvd accepted a bad colour"; fi
+else
+  skip "ui-check cvd: python3 not installed"
+fi
+
+# 5. Bash 3.2 (macOS): syntax, and none of the GNU or bash 4+ only constructs.
 for s in "${scripts[@]}" "$root/tests/test.sh"; do
   bash -n "$s" || ko "syntax ${s#"$root"/}"
 done
@@ -80,7 +121,7 @@ else
   skip "shellcheck not installed"
 fi
 
-# 5. fstack-bots: frontmatter other bots accept (only name and description; Hermes wants
+# 6. fstack-bots: frontmatter other bots accept (only name and description; Hermes wants
 # descriptions near 60 chars, 160 hard), short always-on rules, a preamble in sync with
 # fstack's, and nothing private in a public repo.
 bots=$root/plugins/fstack-bots

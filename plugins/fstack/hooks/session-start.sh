@@ -20,7 +20,8 @@ text="fstack (user plugin, writes nothing to this repo).
 - ${where} Workers never start dev servers, watchers, browsers or background jobs and install nothing global; they verify with types, lint, tests and component fixtures. Only the orchestrator runs the one locked dev server and the merge train.
 - Nothing is done without evidence. Anything unchecked is reported as NOT VERIFIED, with why.
 - Clean repos: one short AGENTS.md, no stray .md or report files, comments say why, fix causes instead of patching symptoms, reuse the repo's real design system. No AI co-author trailers.
-- Load the skill for the task: screens, CSS, mockups -> fstack:ui; proving it works, tests, merge train, dev server -> fstack:verify; reviewing or opening a PR, secrets, infra -> fstack:review; reporting to Facundo -> fstack:digest; briefing another agent or an AGENTS.md -> fstack:fstack."
+- Load the skill for the task: screens, CSS, mockups -> fstack:ui; proving it works, tests, merge train, dev server -> fstack:verify; reviewing or opening a PR, secrets, infra -> fstack:review; reporting to Facundo -> fstack:digest; briefing another agent or an AGENTS.md -> fstack:fstack.
+- Before editing any UI file (.tsx/.jsx/.vue/.svelte/.css, Tailwind, tokens) load fstack:ui, even if the brief already describes the design; UI reports end with its UI evidence block."
 
 text=${text//\\/\\\\}
 text=${text//\"/\\\"}
