@@ -38,6 +38,11 @@ if HOME=$tmp/home XDG_CONFIG_HOME='' "$hook" | json_ok; then ok "hook JSON witho
 printf 'role=orchestrator\nmachine=box "one"\\\n' >"$tmp/home/.config/fstack/config"
 out=$(HOME=$tmp/home XDG_CONFIG_HOME='' "$hook")
 if printf '%s' "$out" | json_ok && printf '%s' "$out" | grep -q 'role orchestrator' && printf '%s' "$out" | grep -q 'load fstack:ui.*UI evidence'; then ok "hook JSON with config"; else ko "hook JSON with config" "$out"; fi
+# Workers only write, commit and open PRs; every check runs on the orchestrator. No text may
+# tell a worker to verify by running things.
+if printf '%s' "$out" | grep -q 'A worker only writes code.*It runs nothing.*one run at a time'; then ok "hook says workers run nothing"; else ko "hook worker rule" "$out"; fi
+bad=$(grep -rniE 'verify (with|without a server)|Verify without a server|run the tests' "$hook" "$plugin/skills" "$root/plugins/fstack-bots")
+if [ -z "$bad" ]; then ok "no text tells a worker to run checks"; else ko "worker told to run checks" "$bad"; fi
 TIMEFORMAT=%R
 worst=0
 for _ in 1 2 3 4 5; do
@@ -64,9 +69,23 @@ diffout=$("$check" main)
 "$lock" status >/dev/null
 FSTACK_ROLE=worker "$lock" start -- true >/dev/null 2>&1
 lock_rc=$?
+# Check runs: orchestrator only, exit code passed through, lock released, one at a time.
+locks=$tmp/locks
+FSTACK_ROLE=worker FSTACK_LOCK_DIR=$locks "$lock" run -- true >/dev/null 2>&1
+run_worker_rc=$?
+FSTACK_ROLE=orchestrator FSTACK_LOCK_DIR=$locks "$lock" run -- sh -c 'exit 7' >/dev/null 2>&1
+run_rc=$?
+[ -d "$locks/run.lock" ] && run_rc="$run_rc, lock left behind"
+mkdir -p "$locks/run.lock" && echo $$ >"$locks/run.lock/pid"
+FSTACK_ROLE=orchestrator FSTACK_LOCK_DIR=$locks FSTACK_RUN_WAIT=0 "$lock" run -- true >/dev/null 2>&1
+busy_rc=$?
+rm -rf "$locks/run.lock"
 if [ "$(snap)" = "$before" ]; then ok "no script writes into the work repo"; else ko "repo changed" "$(diff <(echo "$before") <(snap))"; fi
 case $diffout in *"big.txt: 450"*"PLAN.md: loose"*"untracked.md: loose"*) ok "check.sh reports big file and loose markdown" ;; *) ko "check.sh findings" "$diffout" ;; esac
 if [ "$lock_rc" = 3 ]; then ok "devserver lock refuses workers"; else ko "devserver lock let a worker start (rc $lock_rc)"; fi
+if [ "$run_worker_rc" = 3 ]; then ok "check runs refuse workers"; else ko "a worker started a check run (rc $run_worker_rc)"; fi
+if [ "$run_rc" = 7 ]; then ok "check run passes the exit code through and releases the lock"; else ko "check run (rc $run_rc)"; fi
+if [ "$busy_rc" = 4 ]; then ok "a second check run waits or fails while one is in progress"; else ko "two check runs at once (rc $busy_rc)"; fi
 cd "$root" || exit 1
 
 # 4. ui-check.sh on a fixture repo: flags new raw values, respects the repo's theme and the
