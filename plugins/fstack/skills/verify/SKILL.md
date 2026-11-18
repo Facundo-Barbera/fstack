@@ -1,31 +1,48 @@
 ---
 name: verify
-description: Prove a change works at the right level for the machine's role - workers without any server, the orchestrator with a merge train and the single locked dev server. Use for tests, bugs, anything that must be shown to work, and for integrating a batch of PRs.
+description: Prove a change works, split by role - workers write code and tests and run nothing, the orchestrator runs every check one run at a time through the lock, owns the single dev server and the merge train, and stops everything when done. Use for tests, bugs, anything that must be shown to work, and for integrating a batch of PRs.
 user-invocable: false
 ---
 
 # verify
 
 Use the repo's own commands (its `AGENTS.md`, `package.json`, `Makefile`). Close
-with the command and its result. Anything unchecked is NOT VERIFIED, with why.
+with the command and its result. Anything not run is NOT VERIFIED, with why.
 
-## Worker (no server, ever)
+## Worker (runs nothing)
 
-Types, lint, unit and property tests, contract tests, component tests with
-fixtures. A bug fix starts with a test that fails, then passes. If proof needs a
-running app, hand the orchestrator the exact steps instead of starting one.
+Write the code and its tests: a bug fix comes with the test that should fail
+before and pass after; UI comes with component tests and fixtures. Review it by
+reading the diff. Run nothing: no tests, typecheck, lint, builds, installs,
+servers, watchers, browsers or background processes. Commit, open the PR and end
+it with a NOT VERIFIED list, pending the orchestrator: the exact commands to run
+and, for UI, the routes, fixture flags and viewports to capture.
 
 ## Orchestrator
 
-1. Merge train: merge PR branches one at a time into an integration branch and
-   run the worker checks after each, so a break has one owner.
-2. One dev server per repo, through the lock:
-   `scripts/devserver-lock.sh start -- <dev command>` (needs `FSTACK_ROLE=orchestrator`
-   and `FSTACK_DEV_PORT`). It reuses a running server and never starts a second.
-   The lock and log live under `~/.cache/fstack`, never in the repo.
-3. E2E and screenshots against it. Send each failure back to the owning worker
-   with the command and output; do not patch their piece.
-4. Stop after 3 failed rounds and tell Facundo. `devserver-lock.sh stop` when done.
+`scripts/devserver-lock.sh` (needs `FSTACK_ROLE=orchestrator`; lock and logs
+under `~/.cache/fstack`, never in the repo):
+
+1. Checks: `devserver-lock.sh run -- <command>` for each command the PR lists.
+   One run at a time on this machine: a second run waits for the first
+   (`FSTACK_RUN_WAIT` seconds, default 1800) or fails. When the command ends,
+   everything it started is killed and the lock released.
+2. Merge train: merge PR branches one at a time into an integration branch and
+   run the checks after each, so a break has one owner.
+3. One dev server per repo: `devserver-lock.sh start -- <dev command>` with
+   `FSTACK_DEV_PORT`. It reuses a running server and never starts a second.
+4. E2E and screenshots against it. UI screenshots: Playwright MCP if this session
+   has it (`browser_emulate_media` with `colorScheme: dark`, `browser_resize`,
+   `browser_navigate`, `browser_take_screenshot`), else the repo's own
+   Playwright; never install or configure it in the repo. Capture what the
+   worker handed over, dark first, at 360, 768 and 1280 unless asked otherwise,
+   on the commit under review, and replace PENDING ORCHESTRATOR in the UI
+   evidence block with results and links. With no way to capture, write NOT
+   VISUALLY VERIFIED.
+5. Send each failure back to the owning worker with the command and output; do
+   not patch their piece. Stop after 3 failed rounds and tell Facundo.
+6. Close everything: `devserver-lock.sh stop`, and `devserver-lock.sh status`
+   shows no server and no run.
 
 ## Rules
 

@@ -1,6 +1,6 @@
 {
   "name": "fstack",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "description": "Facundo's working rules for coding agents: evidence before done, worker/orchestrator roles, clean repos, UI with the real design system, one-screen digests.",
   "author": { "name": "Facundo Barbera" },
   "homepage": "https://github.com/Facundo-Barbera/fstack",

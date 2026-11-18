@@ -24,11 +24,16 @@ Start every brief with this block (copied from the fstack skill, section
 
 ```text
 Machine: <host>. Role: <WORKER | ORCHESTRATOR>.
-- WORKER: never start dev servers, watchers, browsers or background processes;
-  install nothing global. Verify without a server: types, lint, tests, scripts.
-- Read the repo's AGENTS.md first if it has one; it wins over this brief.
-- Nothing is done without evidence; what you could not check is NOT VERIFIED.
-- One worktree and branch; commit everything; open a PR, never merge.
+- WORKER: write the code, review it by reading, commit, open a PR, never merge.
+  Run nothing: no tests, typecheck, lint, builds, installs, servers, watchers,
+  browsers or background processes. Mark everything unexecuted NOT VERIFIED
+  (pending the orchestrator) and list the exact commands to run.
+- ORCHESTRATOR: run the PR's checks one run at a time with
+  `devserver-lock.sh run -- <command>`, then stop every process you started.
+- Read the repo's AGENTS.md first if it has one; it wins over this brief, except
+  that a worker still runs nothing.
+- Nothing is done without evidence; what was not run or checked is NOT VERIFIED.
+- One worktree and branch; commit everything.
 - No AI co-author trailers; no report or plan files in the repo.
 ```
 
@@ -47,8 +52,9 @@ Send it, end the turn, and wait for the agent's report. Do not poll.
 When a delegated thread ends:
 
 1. Keep the result: PR link, branch, head commit, checks, NOT VERIFIED items.
-2. Close your own gaps first: if a check was skipped and you can run it (read
-   the PR, run the tests, open the diff), do it before reporting.
+2. Close your own gaps first by reading: the PR, the diff, the NOT VERIFIED
+   list. Tests and builds never run on a worker machine; the orchestrator runs
+   them, one run at a time, so ask it for the run and report the result.
 3. Clean up: stop processes, timers or watchers you started for it; archive or
    close the thread. Never discard unmerged work.
 

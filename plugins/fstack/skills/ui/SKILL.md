@@ -1,55 +1,60 @@
 ---
 name: ui
-description: UI work in Facundo's repos - inventory the real design system, follow a visual reference, mockups as 2-3 directions with real tokens, build rules (colour-blind safe, dark mode), verify by role and review for slop. Use for any task that touches screens, CSS, components or mockups.
+description: Mandatory before editing any UI file in Facundo's repos - .tsx, .jsx, .vue, .svelte, .css/.scss, Tailwind classes or config, theme or token files - and for mockups or prototypes, even when the brief already describes the design. Inventory the real design system, Facundo's colour-blind and dark-mode rules, prototypes inside the app, the tools to delegate to, and the UI evidence block without which UI work is not done.
 user-invocable: false
 ---
 
 # ui
 
-## 1. Inventory first
+## Before the first edit: inventory
 
-Find the tokens (CSS variables, theme or Tailwind config), the components most
-used, the routes and the product's words for its things. Reuse them; one concept,
-one name. A missing token or component is proposed as an addition, never inlined.
-`git grep -nE '#[0-9a-fA-F]{3,6}\b|\[[0-9]+px\]'` shows raw values to avoid.
+Read the Tailwind config, the CSS variables or `@theme` and token files,
+`components.json` and the component folders (`scripts/ui-check.sh inventory`
+lists them where running is allowed; a worker reads them). Build with what is
+there. A missing token or component goes into the token file or component
+folder, never inline in a view.
 
-## 2. Reference
+## Facundo's rules
 
-If Facundo sent a screenshot or URL, open it and cite it. If you cannot open it,
-say NOT VERIFIED and ask for a screenshot. Take layout, density and hierarchy from
-it in numbers, mapped to the nearest token. It outranks your taste.
+- He is colour-blind: meaning is never carried by colour alone. Every status,
+  threshold or diff state also has an icon or a word.
+- Dark mode is the default.
+- Prototypes live inside the app (a prototype route, story or `?proto=` flag) with
+  the real components and fixture data, and the chosen one moves to the real route.
+  Never a standalone HTML mockup or an image.
 
-## 3. Mockups
+## Who does what
 
-New screens or redesigns: 2-3 directions that differ in structure (table, cards,
-split), built with the repo's real tokens and components on a prototype route or
-story, with realistic fixtures (long names, empty, error). Never generic HTML.
-Facundo picks before anything is built; the losers are deleted in the same PR.
+- Worker: writes the code and its fixtures and tests, reviews them by reading, and
+  runs nothing, `ui-check.sh` included. Hands over routes, flags and viewports.
+- Orchestrator: runs `ui-check.sh`, the checks, the one dev server and the
+  screenshots, one run at a time (`fstack:verify`).
 
-## 4. Build rules
+## Delegate to existing tools
 
-- Tokens only: no raw hex, rgb or pixel values outside token files.
-- Meaning never by colour alone: pair it with an icon or a word. Facundo is
-  colour-blind; avoid red/green as the only contrast.
-- Dark mode works (default if the repo has no preference). Text through i18n if
-  the repo has it.
-- Calm: no boxes in boxes, no gratuitous gradients, glows or decorative icons.
-  Affordances visible without hover.
-- A replacement deletes what it replaces in the same PR.
+Use them if this session has them; if not, say so in the report and carry on. Never
+install them from here and never write `.mcp.json` or any other config into the repo.
 
-## 5. Verify
+- `components.json` present: the shadcn MCP to browse and read registry components
+  instead of hand-writing them. Adding one installs packages: orchestrator only.
+- Accessibility and detail review: the `web-design-guidelines` skill (Vercel).
+- `frontend-design` (Anthropic): only for a new screen in a repo with no design
+  system. It fights an existing one.
+- Screenshots: Playwright MCP, run by the orchestrator.
 
-- Worker: typecheck, lint, component tests with fixtures (empty, loading, error,
-  long text, many items). Report "visual check pending orchestrator" with the
-  routes and fixtures to capture.
-- Orchestrator: on the one locked dev server, screenshots at 360, 768 and 1280,
-  dark first. If not seen, write NOT VISUALLY VERIFIED.
-- At most 2 rounds of visual patches. If round 2 does not converge, stop and
-  diagnose the layout, then propose a new mockup.
+## Gate: UI evidence
 
-## 6. Review (own diff or a PR)
+UI work is not done until the report or PR body ends with this block. A worker
+fills every line with PENDING ORCHESTRATOR plus what to run; it is never "done".
 
-Flag: slop from section 4, a second component that duplicates one that exists,
-spacing that matches neither tokens nor the reference, contrast under WCAG AA,
-controls without keyboard focus or accessible name. Rank as ⛔ Blocks, ⚠ Review,
-ℹ Note, with file:line.
+```text
+UI evidence
+- ui-check diff: <clean | each finding with its reason | PENDING ORCHESTRATOR: base>
+- ui-check cvd: <worst ΔE and contrast | no meaningful colour changed | PENDING ORCHESTRATOR: BG + colours>
+- Screenshots (dark, orchestrator, this commit): <links | PENDING ORCHESTRATOR: routes, flags, viewports>
+```
+
+- `scripts/ui-check.sh diff [base]` ignores the repo's theme colours and the classes
+  the base already uses. `cvd BG HEX HEX...` takes the background first; fix or
+  justify any ΔE under 20 or contrast under 4.5 (3 for icons).
+- Screenshots from an older commit do not count.
