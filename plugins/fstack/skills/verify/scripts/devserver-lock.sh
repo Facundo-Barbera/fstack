@@ -34,6 +34,20 @@ acquire() {
   done
 }
 
+# Kills the check run's process group (or the command alone, if job control could not give
+# it a group) and releases the run lock. set +e first: under errexit, a kill of a group that
+# already exited is a failing last command, and it would end the shell before the rm and
+# replace the run's exit code with 1. Processes that left the group on purpose survive.
+end_run() {
+  set +e
+  if [ -n "$child" ]; then
+    kill -- "-$child" 2>/dev/null
+    # Once wait reaped it, the pid may belong to someone else: only the group is ours.
+    [ -n "$reaped" ] || kill "$child" 2>/dev/null
+  fi
+  rm -rf "$run_lock"
+}
+
 need_orchestrator() {
   if [ "${FSTACK_ROLE:-worker}" != orchestrator ]; then
     echo "devserver-lock: role is '${FSTACK_ROLE:-worker}'; only the orchestrator runs servers and checks" >&2
@@ -73,16 +87,19 @@ case ${1:-} in
       exit 4
     fi
     echo $$ >"$run_lock/pid"
-    child=""
-    # Whatever happens, the run leaves nothing behind: its process group dies and the
-    # lock is released. Processes that left the group on purpose are not caught.
-    trap '[ -n "$child" ] && kill -- "-$child" 2>/dev/null; rm -rf "$run_lock"' EXIT
+    child="" reaped=""
+    # The trap covers signals and unexpected exits; the normal path cleans up itself and
+    # clears the trap, so the exit code never depends on what a trap returns.
+    trap end_run EXIT
     trap 'exit 130' INT TERM
     set -m
     "$@" </dev/null &
     child=$!
     rc=0
     wait "$child" || rc=$?
+    reaped=1
+    end_run
+    trap - EXIT
     echo "devserver-lock: run finished with exit $rc: $*" >&2
     exit "$rc"
     ;;

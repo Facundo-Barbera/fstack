@@ -73,7 +73,8 @@ lock_rc=$?
 locks=$tmp/locks
 FSTACK_ROLE=worker FSTACK_LOCK_DIR=$locks "$lock" run -- true >/dev/null 2>&1
 run_worker_rc=$?
-FSTACK_ROLE=orchestrator FSTACK_LOCK_DIR=$locks "$lock" run -- sh -c 'exit 7' >/dev/null 2>&1
+# Keep run's stderr (stdout dropped) so a failure on the orchestrator shows its cause.
+run_err=$(FSTACK_ROLE=orchestrator FSTACK_LOCK_DIR=$locks "$lock" run -- sh -c 'exit 7' 2>&1 >/dev/null)
 run_rc=$?
 [ -d "$locks/run.lock" ] && run_rc="$run_rc, lock left behind"
 mkdir -p "$locks/run.lock" && echo $$ >"$locks/run.lock/pid"
@@ -84,7 +85,7 @@ if [ "$(snap)" = "$before" ]; then ok "no script writes into the work repo"; els
 case $diffout in *"big.txt: 450"*"PLAN.md: loose"*"untracked.md: loose"*) ok "check.sh reports big file and loose markdown" ;; *) ko "check.sh findings" "$diffout" ;; esac
 if [ "$lock_rc" = 3 ]; then ok "devserver lock refuses workers"; else ko "devserver lock let a worker start (rc $lock_rc)"; fi
 if [ "$run_worker_rc" = 3 ]; then ok "check runs refuse workers"; else ko "a worker started a check run (rc $run_worker_rc)"; fi
-if [ "$run_rc" = 7 ]; then ok "check run passes the exit code through and releases the lock"; else ko "check run (rc $run_rc)"; fi
+if [ "$run_rc" = 7 ]; then ok "check run passes the exit code through and releases the lock"; else ko "check run (rc $run_rc)" "stderr: ${run_err:-<empty>}"; fi
 if [ "$busy_rc" = 4 ]; then ok "a second check run waits or fails while one is in progress"; else ko "two check runs at once (rc $busy_rc)"; fi
 cd "$root" || exit 1
 
