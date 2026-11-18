@@ -13,7 +13,8 @@ with the command and its result. Anything unchecked is NOT VERIFIED, with why.
 
 Types, lint, unit and property tests, contract tests, component tests with
 fixtures. A bug fix starts with a test that fails, then passes. If proof needs a
-running app, hand the orchestrator the exact steps instead of starting one.
+running app, hand the orchestrator the exact steps instead of starting one;
+for UI, the routes, fixture flags and viewports to capture.
 
 ## Orchestrator
 
@@ -25,6 +26,13 @@ running app, hand the orchestrator the exact steps instead of starting one.
    The lock and log live under `~/.cache/fstack`, never in the repo.
 3. E2E and screenshots against it. Send each failure back to the owning worker
    with the command and output; do not patch their piece.
+   UI screenshots: Playwright MCP if this session has it (`browser_emulate_media`
+   with `colorScheme: dark`, `browser_resize`, `browser_navigate`,
+   `browser_take_screenshot`), else the repo's own Playwright; never install
+   or configure it in the repo. Capture the routes and flags the worker handed
+   over, dark first, at the viewports asked (360, 768, 1280 by default), on the
+   commit under review, and replace PENDING ORCHESTRATOR in the UI evidence
+   block with the links. With no way to capture, write NOT VISUALLY VERIFIED.
 4. Stop after 3 failed rounds and tell Facundo. `devserver-lock.sh stop` when done.
 
 ## Rules

@@ -79,6 +79,7 @@ mkdir -p src/components
 printf '@import "tailwindcss";\n@theme {\n  --color-ember-400: hsl(24 100%% 58%%);\n}\n' >src/index.css
 printf 'module.exports = { theme: { extend: { colors: {\n  tide: { 500: "#0a7" },\n} } } };\n' >tailwind.config.js
 printf 'export const A = () => <div className="bg-white/60 p-4" />;\n' >src/components/A.tsx
+mkdir -p apps/web && printf '{\n  "style": "new-york",\n  "aliases": {\n    "ui": "@/components/ui"\n  }\n}\n' >apps/web/components.json
 git add -A && git commit -qm base
 git checkout -qb feature
 {
@@ -94,7 +95,7 @@ got=$(printf '%s\n' "$out" | sed -n 's/^src[^:]*: \([^ ]*\) .*/\1/p' | LC_ALL=C 
 want='#abcdef bg-[#ff0000] bg-white/70 border-blue-500/50 text-rose-500 '
 if [ "$rc" = 1 ] && [ "$got" = "$want" ]; then ok "ui-check diff flags only new raw values"; else ko "ui-check diff (rc $rc, got '$got')" "$out"; fi
 out=$("$ui" inventory); rc=$?
-case "$rc $out" in "0 "*"ember-400"*"tide"*"src/components"*) ok "ui-check inventory lists theme colours and components" ;; *) ko "ui-check inventory (rc $rc)" "$out" ;; esac
+case "$rc $out" in "0 "*"apps/web/components.json"*'"style": "new-york"'*"ember-400"*"tide"*"src/components"*) ok "ui-check inventory lists components.json, theme colours and components" ;; *) ko "ui-check inventory (rc $rc)" "$out" ;; esac
 if [ "$(snap)" = "$before" ]; then ok "ui-check writes nothing into the work repo"; else ko "ui-check changed the repo" "$(diff <(echo "$before") <(snap))"; fi
 rm src/components/C.tsx
 if out=$("$ui" diff HEAD); then ok "ui-check diff passes when nothing changed"; else ko "ui-check diff with no changes" "$out"; fi
@@ -108,6 +109,12 @@ if command -v python3 >/dev/null; then
 else
   skip "ui-check cvd: python3 not installed"
 fi
+# fstack:ui stays thin (more instructions did not make UI better) and keeps its gate.
+uiskill=$plugin/skills/ui/SKILL.md
+n=$(wc -l <"$uiskill" | tr -d ' ')
+if [ "$n" -le 60 ]; then ok "fstack:ui is $n lines"; else ko "fstack:ui is $n lines (max 60)"; fi
+gate=$(awk '/^UI evidence$/ { s = 1 } s && /^```$/ { exit } s' "$uiskill")
+case $gate in *"ui-check diff:"*"ui-check cvd:"*"Screenshots (dark, orchestrator"*"PENDING ORCHESTRATOR"*) ok "fstack:ui gate asks for diff, cvd and dark screenshots" ;; *) ko "fstack:ui gate block" "$gate" ;; esac
 
 # 5. Bash 3.2 (macOS): syntax, and none of the GNU or bash 4+ only constructs.
 for s in "${scripts[@]}" "$root/tests/test.sh"; do

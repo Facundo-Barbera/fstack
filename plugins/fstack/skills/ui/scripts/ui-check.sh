@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Read-only helpers for fstack:ui: nothing written to the repo (diff uses one temp dir, removed on exit).
 # Needs git, grep, awk; cvd also needs python3.
-#   inventory          token files, Tailwind theme colours, component folders, prototype routes
+#   inventory          Tailwind config and theme colours, CSS variables, components.json, component folders, prototypes
 #   diff [base]        raw colours/sizes and default-palette classes added since base (exit 1 if any)
 #   cvd BG HEX HEX...  colour-blind distance (deutan/protan/tritan, Machado 2009) and WCAG contrast vs BG
 set -uo pipefail
@@ -54,6 +54,10 @@ case $cmd in
 inventory)
   echo "## token / theme files"
   files '*.css' '*.scss' '*.ts' '*.js' '*.mjs' '*.cjs' '*.json' | grep -iE 'token|theme|tailwind|palette|colou?rs?\.|design' | head -30
+  echo "## shadcn components.json (registry components: use the shadcn MCP if the session has it)"
+  files '*components.json' | grep -E '(^|/)components\.json$' | while IFS= read -r f; do
+    echo "$f"; grep -E '"(style|baseColor|cssVariables|css|components|ui|registries)"' "$f" | head -8
+  done
   echo "## files defining CSS variables"
   files '*.css' '*.scss' | while IFS= read -r f; do grep -lE '(^|[{;[:space:]])--[a-z0-9-]+[[:space:]]*:' "$f"; done 2>/dev/null | head -20
   echo "## theme colour names (use these as bg-NAME, text-NAME...)"
